@@ -1,7 +1,13 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import json
 from pathlib import Path
+
+# 配置 stdout 使用 UTF-8 编码，支持 Unicode 表情符号
+# if sys.stdout.encoding != 'utf-8':
+#     import io
+#     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def setup_environment():
     """Setup required environment variables"""
@@ -117,4 +123,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

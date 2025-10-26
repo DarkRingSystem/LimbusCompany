@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+
+# 配置 stdout 使用 UTF-8 编码，支持 Unicode 表情符号
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
 from marker.config.parser import ConfigParser

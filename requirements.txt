@@ -1,3 +1,4 @@
+langchain-core
 python-dotenv
 uvicorn
 langgraph
