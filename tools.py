@@ -21,5 +21,3 @@ def get_zhipu_search_mcp_tools():
     tools = asyncio.run(client.get_tools())
     return tools
 
-# tools = get_zhipu_search_mcp_tools()
-# print(tools)

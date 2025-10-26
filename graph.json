@@ -6,6 +6,9 @@
     },
     "web_agent": {
       "path": "./main.py:web_agent"
+    },
+    "test_case_generate": {
+      "path": "./main.py:test_case_generate"
     }
   },
   "env": ".env",

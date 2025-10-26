@@ -1,4 +1,3 @@
-from langgraph.prebuilt import create_react_agent
 from langchain.agents import create_agent
 from llms import get_deepseek_model
 from tools import get_weather, get_zhipu_search_mcp_tools
@@ -21,6 +20,6 @@ web_agent = create_agent(
 test_case_generate = create_agent(
     model=model,
     tools=[],
-    system_prompt="You are a helpful assistant"
+    system_prompt="你是一个软件测试专家，根据用户提供的信息，生成专业且完整的测试用例"
 )
 
