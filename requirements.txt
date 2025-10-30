@@ -1,3 +1,6 @@
+langchain-tavily
+ipython
+typing-extensions
 langchain-core
 python-dotenv
 uvicorn
