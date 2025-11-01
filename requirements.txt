@@ -1,3 +1,4 @@
+openpyxl
 langchain-tavily
 ipython
 typing-extensions
