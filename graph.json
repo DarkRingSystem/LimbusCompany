@@ -7,8 +7,11 @@
     "web_agent": {
       "path": "./main.py:web_agent"
     },
-    "Ui_auto_agent": {
-      "path": "./main.py:Ui_auto_agent"
+    "ui_auto_agent": {
+      "path": "./main.py:ui_auto_agent"
+    },
+    "api_SQL_agent": {
+      "path": "./main.py:api_SQL_agent"
     }
   },
   "env": ".env",

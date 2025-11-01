@@ -1,5 +1,6 @@
 from langchain.agents import create_agent
 from llms import get_deepseek_model
+from sql_tools import get_uat_pg_sql_tools, get_test_pg_sql_tools
 from tools import get_weather, get_zhipu_search_mcp_tools, get_chrome_mcp_tools, \
     get_mcp_server_chart_tools, get_filesystem_tools, get_excel_tools
 
@@ -32,7 +33,7 @@ web_agent = create_agent(
 )
 
 # UI自动化测试助手
-Ui_auto_agent = create_agent(
+ui_auto_agent = create_agent(
     model=model,
     tools=get_chrome_mcp_tools() + get_mcp_server_chart_tools() + get_filesystem_tools() + get_excel_tools(),
     system_prompt="""
@@ -48,4 +49,18 @@ Ui_auto_agent = create_agent(
 5. 生成图表形式的测试报告
 4. 保存HTML格式的测试报告
 """)
+
+# API平台数据操作小助手
+api_SQL_agent = create_agent(
+    model=model,
+    tools=get_test_pg_sql_tools() + get_uat_pg_sql_tools(),
+    system_prompt="""
+    你是一个API项目数据库操作小助手。
+    你可以根据用户给出的环境信息，选择使用get_test_pg_sql_tools 或者 get_uat_pg_sql_tools工具来操作数据库。用户
+    根据用户提出的需求，修改数据库数据。你有以下几个功能：
+    1. 关闭或开启平台登录验证码验证，你需要先读取是system的schema中的config表中loginConfig的value值，再根据其格式把verifyImage改为true或false
+    2. 修改用户最后修改密码日期，你需要修改的是system的schema中的users表中的last_change_password_date字段，格式是yyyy-MM-dd
+    3. 其他操作数据库的功能
+""")
+
 
