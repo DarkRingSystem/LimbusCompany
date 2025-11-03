@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import List, Dict, Any
+from pathlib import Path
 
 from langchain_core.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -112,42 +113,40 @@ def get_filesystem_tools():
     tools = asyncio.run(client.get_tools())
     return tools
 
+# 启动命令 EXCEL_FILES_PATH=/Users/darkringsystem/AI/LimbusCompany/files/UIAutoCases uvx excel-mcp-server streamable-http
+# 优化，使用stdio模式，自动启动
+# https://www.modelscope.cn/mcp/servers/codeyijun/excel-mcp-server
+
 # def get_excel_tools():
 #     client = MultiServerMCPClient(
 #         {
-#             "mcp_excel": {
-#                 "command": "npx",
-#                 "args": ["--yes", "@negokaz/excel-mcp-server"],
-#                 "env": {
-#                     "EXCEL_MCP_PAGING_CELLS_LIMIT": "4000"
-#                 },
-#                 "transport": "stdio"
-#             }
+#             "mcp_excel_servers": {
+#                 "url": "http://localhost:8017/mcp",
+#                 "transport": "streamable_http"
+#                  }
 #         }
 #     )
 #     tools = asyncio.run(client.get_tools())
 #     return tools
 
-
-# 启动命令 EXCEL_FILES_PATH=/Users/darkringsystem/AI/LimbusCompany/files/UIAutoCases uvx excel-mcp-server streamable-http
-# https://www.modelscope.cn/mcp/servers/codeyijun/excel-mcp-server
-
 def get_excel_tools():
     client = MultiServerMCPClient(
-        {
-            "mcp_excel_servers": {
-                "url": "http://localhost:8017/mcp",
-                "transport": "streamable_http"
-                 }
-        }
-    )
+    {
+        "mcp_excel_servers": {
+            "command": "uvx",
+            "args": ["excel-mcp-server","stdio"],
+            "transport": "stdio"
+             }
+    }
+)
     tools = asyncio.run(client.get_tools())
     return tools
+
 
 @tool
 def save_test_cases_to_excel(
     test_cases: List[Dict[str, Any]],
-    file_path: str = "flies/test_cases/test_cases.xlsx",
+    file_path: str = None,
     sheet_name: str = "测试用例",
     append: bool = False,
     columns: List[str] = None
@@ -173,7 +172,8 @@ def save_test_cases_to_excel(
                        },
                        ...
                    ]
-        file_path: Excel文件保存路径，默认为 "flies/test_cases/test_cases.xlsx"
+        file_path: Excel文件保存路径，默认为项目根目录下的 "files/UIAutoCases/test_cases.xlsx"
+                  可以传入相对路径或绝对路径
         sheet_name: 工作表名称，默认为 "测试用例"
         append: 是否追加到现有文件，True表示追加，False表示创建新文件。默认为False
         columns: 可选的列名列表，用于指定列的顺序。
@@ -196,6 +196,25 @@ def save_test_cases_to_excel(
         成功创建！已保存 2 条测试用例到文件: /path/to/我的测试.xlsx
     """
     try:
+        # 处理文件路径
+        if file_path is None:
+            # 使用默认路径
+            project_root = Path(__file__).parent
+            file_path = project_root / "files" / "TestCases" / "test_cases.xlsx"
+        else:
+            file_path = Path(file_path)
+            # 如果是相对路径且只是文件名，放到默认目录下
+            if not file_path.is_absolute() and len(file_path.parts) == 1:
+                project_root = Path(__file__).parent
+                file_path = project_root / "files" / "TestCases" / file_path
+            # 如果是其他相对路径，基于项目根目录解析
+            elif not file_path.is_absolute():
+                project_root = Path(__file__).parent
+                file_path = project_root / file_path
+
+        # 确保目录存在
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
         # 验证输入数据
         if not test_cases:
             return "错误：测试用例列表为空"
@@ -237,10 +256,10 @@ def save_test_cases_to_excel(
         )
 
         # 判断是追加模式还是创建新文件
-        if append and os.path.exists(file_path):
+        if append and file_path.exists():
             # 追加模式：加载现有文件
             try:
-                wb = load_workbook(file_path)
+                wb = load_workbook(str(file_path))
                 if sheet_name in wb.sheetnames:
                     # 工作表已存在，追加到末尾
                     ws = wb[sheet_name]
@@ -302,15 +321,15 @@ def save_test_cases_to_excel(
 
         # 保存文件
         try:
-            wb.save(file_path)
+            wb.save(str(file_path))
         except PermissionError:
             return f"错误：权限被拒绝。文件 '{file_path}' 可能正在其他程序中打开。"
         except Exception as e:
             return f"错误：保存文件失败: {str(e)}"
 
         # 生成成功消息
-        mode_text = "追加" if (append and os.path.exists(file_path)) else "创建"
-        abs_path = os.path.abspath(file_path)
+        mode_text = "追加" if (append and file_path.exists()) else "创建"
+        abs_path = file_path.resolve()
         return f"成功{mode_text}！已保存 {len(test_cases)} 条测试用例到文件: {abs_path}"
 
     except Exception as e:

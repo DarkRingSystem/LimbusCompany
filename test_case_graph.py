@@ -70,7 +70,7 @@ def call_llm_test_case_generation_node(state: State):
     messages = state["messages"]
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [system_prompt] + messages
-    result = model.invoke(state["messages"])
+    result = model.invoke(messages)
     return {"messages": result,
             "current_turn" : current_turn + 1
             }
@@ -107,7 +107,7 @@ def call_llm_test_case_review_node(state: State):
     final_messages = [system_prompt] + filtered_messages
 
     result = model.invoke(final_messages)
-    return {"messages": result, "current_turn": current_turn + 1}
+    return {"messages": result, "current_turn": current_turn + 0}
 
 def call_tool_excel_agent_node(state: State):
     excel_agent = create_agent(
