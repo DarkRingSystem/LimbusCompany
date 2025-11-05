@@ -19,7 +19,7 @@ model = init_chat_model(
     temperature=0
 )
 
-# Augment the LLM with tools
+# 工具绑定大模型
 tools = [save_test_cases_to_excel]
 
 # 将工具绑定到大模型对象

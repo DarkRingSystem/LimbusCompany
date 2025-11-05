@@ -12,6 +12,12 @@
     },
     "test_case_agent": {
       "path": "./test_case_graph.py:graph"
+    },
+    "api_ES_agent": {
+      "path": "./main.py:api_ES_agent"
+    },
+    "api_MQ_agent": {
+      "path": "./main.py:api_MQ_agent"
     }
   },
   "env": ".env",
