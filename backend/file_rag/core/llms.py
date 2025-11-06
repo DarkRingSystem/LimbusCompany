@@ -12,6 +12,6 @@ def get_deepseek_model():
     return ChatDeepSeek(model="deepseek-chat")
 
 def get_doubao_seed1_6_model():
-    ChatOpenAI(model="doubao-seed-1-6-251015",
+    return ChatOpenAI(model="doubao-seed-1-6-251015",
                 base_url= "https://ark.cn-beijing.volces.com/api/v3",
                api_key=dotenv.get_key(".env", "DOUBAO_API_KEY"))

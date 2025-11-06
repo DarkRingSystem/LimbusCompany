@@ -4,9 +4,6 @@
     "agent": {
       "path": "./main.py:agent"
     },
-    "web_agent": {
-      "path": "./main.py:web_agent"
-    },
     "api_SQL_agent": {
       "path": "./main.py:api_SQL_agent"
     },
@@ -18,6 +15,9 @@
     },
     "api_MQ_agent": {
       "path": "./main.py:api_MQ_agent"
+    },
+    "api_file_agent": {
+      "path": "./backend/file_rag/core/file_chat_graph.py:graph"
     }
   },
   "env": ".env",

@@ -1,3 +1,6 @@
+langchain-community
+langchain-pymupdf4llm
+langchain-openai
 openpyxl
 langchain-tavily
 ipython
@@ -10,4 +13,3 @@ langchain[openai]
 langchain-deepseek
 langchain-mcp-adapters
 langgraph-cli[inmem]
-marker-pdf
