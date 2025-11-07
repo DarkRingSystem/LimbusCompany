@@ -1,6 +1,7 @@
 from typing import TypedDict, Annotated, Any
 import base64
 import os
+from uuid import uuid4
 from langchain.agents import create_agent, AgentState
 from langchain.agents.middleware import before_model
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
@@ -8,11 +9,14 @@ from langgraph.graph import add_messages, StateGraph, START, END
 from langgraph.runtime import Runtime
 from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 from langchain_community.document_loaders.parsers import LLMImageBlobParser
+from file_rag.core.llms import get_deepseek_model, get_doubao_seed1_6_model, get_qwen_vl_model
 
-from file_rag.core.llms import get_deepseek_model, get_doubao_seed1_6_model
+# 前端不渲染的消息 ID 前缀（与前端 ensure-tool-responses.ts 中的常量保持一致）
+DO_NOT_RENDER_ID_PREFIX = "do-not-render-"
 
 chat_model = get_deepseek_model()
 pic_model = get_doubao_seed1_6_model()
+pic_qwen_model = get_qwen_vl_model()
 
 # 创建中间件
 @before_model
@@ -35,7 +39,7 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
     # 标记是否需要更新消息
     need_update = False
 
-    # 遍历消息，查找包含 PDF 文件的消息
+    # 遍历消息，查找包含 PDF 文件或图片的消息
     for i, message in enumerate(messages):
         if not isinstance(message, HumanMessage):
             continue
@@ -44,9 +48,10 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
         if not isinstance(message.content, list):
             continue
 
-        # 遍历消息内容，查找 PDF 文件并过滤掉 file 类型
+        # 遍历消息内容，查找 PDF 文件并过滤掉 file 类型和历史 image_url
         new_content = []
         has_pdf = False
+        is_latest_message = (i == len(messages) - 1)  # 判断是否为最新消息
 
         for content_item in message.content:
             if isinstance(content_item, dict):
@@ -86,7 +91,8 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
                             mode="page",
                             extract_images=True,
                             images_parser=LLMImageBlobParser(
-                                model=pic_model
+                                model=pic_model,
+                                prompt = "请将图片中的内容转换为可读文本。"
                             ),
                         )
                         docs = loader.load()
@@ -123,14 +129,25 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
                     # 其他类型的 file 也需要过滤掉
                     print(f"警告: 检测到不支持的 file 类型: {mime_type}，已从消息中移除")
                     need_update = True
+
+                elif content_type == 'image_url' or content_type == 'image':
+                    # 问题2修复：只保留最新消息中的图片，过滤掉历史消息中的图片
+                    if is_latest_message:
+                        # 最新消息中的图片保留
+                        new_content.append(content_item)
+                    else:
+                        # 历史消息中的图片移除（避免多轮对话时重复发送图片）
+                        print(f"已从历史消息中移除 {content_type} 类型字段（避免重复发送）")
+                        need_update = True
+
                 else:
-                    # 保留 text 和 image_url 等其他类型
+                    # 保留 text 等其他类型
                     new_content.append(content_item)
             else:
                 new_content.append(content_item)
 
-        # 如果有 PDF 文件，更新消息内容（移除 file 类型字段）
-        if has_pdf and new_content != message.content:
+        # 如果内容有变化（移除了 PDF、file 类型或历史图片），更新消息
+        if new_content != message.content:
             messages[i] = HumanMessage(
                 content=new_content,
                 additional_kwargs=message.additional_kwargs,
@@ -138,6 +155,11 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
                 id=message.id
             )
             need_update = True
+
+            if has_pdf:
+                print(f"已更新消息 {i}：移除了 PDF 文件字段")
+            elif not is_latest_message:
+                print(f"已更新历史消息 {i}：移除了图片字段")
 
     # 如果提取到了 PDF 内容，将其作为系统消息插入到消息列表中
     if pdf_contents:
@@ -155,14 +177,18 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
             "\n\n---\n\n".join(system_content_parts)
         )
 
-        # 创建系统消息
-        system_message = SystemMessage(content=system_message_content)
+        # 创建系统消息，使用 do-not-render- 前缀的 ID，这样前端不会渲染这条消息
+        system_message = SystemMessage(
+            content=system_message_content,
+            id=f"{DO_NOT_RENDER_ID_PREFIX}{uuid4()}"
+        )
 
         # 在最后一条消息之前插入系统消息
         # 这样的顺序是: [...历史消息, 系统消息(PDF内容), 最新用户消息(已移除file字段)]
         updated_messages = messages[:-1] + [system_message, messages[-1]]
 
         print(f"已将 {len(pdf_contents)} 个PDF文件的内容作为系统消息添加到上下文中")
+        print(f"系统消息 ID: {system_message.id}（前端不会渲染此消息）")
         print(f"已从用户消息中移除 file 类型字段，只保留 text 和 image_url 类型")
 
         # 返回更新后的消息列表
@@ -175,19 +201,6 @@ def log_before_model(state: AgentState, runtime: Runtime) -> dict[str, Any] | No
 
     # 如果没有任何需要处理的内容，返回 None（不修改消息）
     return None
-
-# 构建PDF加载器，使用多模态大模型解析PDF中的图片
-# loader = PyMuPDF4LLMLoader(
-#     "./cache_data/layout-parser-paper.pdf",
-#     mode="page",
-#     extract_images=True,
-#     images_parser=LLMImageBlobParser(
-#         model=pic_model
-#     ),
-# )
-# docs = loader.load()
-
-# print(docs[5].page_content[1863:])
 
 
 # 基础助手 - 负责文本类对话

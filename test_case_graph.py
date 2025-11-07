@@ -1,16 +1,14 @@
 import os
 from typing import TypedDict, Annotated
-
 from langchain.agents import create_agent
 from langchain_core.messages import SystemMessage
 import dotenv
-from langchain.tools import tool
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage
 from langgraph.constants import START, END
 from langgraph.graph import MessagesState, StateGraph, add_messages
 from langgraph.prebuilt import ToolNode
-from tools import save_test_cases_to_excel
+from tools import save_test_cases_to_excel, get_xmind_tools, generate_xmind_from_test_cases
 
 os.environ["DEEPSEEK_API_KEY"] = dotenv.get_key(".env", "DEEPSEEK_API_KEY")
 
@@ -20,7 +18,10 @@ model = init_chat_model(
 )
 
 # 工具绑定大模型
-tools = [save_test_cases_to_excel]
+# 使用原生Python工具替代MCP工具，更稳定可靠
+tools = [generate_xmind_from_test_cases]
+# 如果需要使用MCP工具，可以取消下面的注释
+# tools = get_xmind_tools()
 
 # 将工具绑定到大模型对象
 # 结果：应该调用哪个工具，以及工具参数是什么？
@@ -35,7 +36,7 @@ class State(TypedDict):
 
 def call_llm_test_case_generation_node(state: State):
     """调用llm生成测试用例"""
-    model_with_tools = model.bind_tools(tools)
+    # model_with_tools = model.bind_tools(tools)
     # 获取当前轮次
     current_turn = state.get("current_turn", 0)
 
@@ -109,14 +110,94 @@ def call_llm_test_case_review_node(state: State):
     result = model.invoke(final_messages)
     return {"messages": result, "current_turn": current_turn + 0}
 
-def call_tool_excel_agent_node(state: State):
-    excel_agent = create_agent(
+# def call_tool_excel_agent_node(state: State):
+#     excel_agent = create_agent(
+#         model=model,
+#         tools=tools,
+#         system_prompt="""根据用例信息，生成Excel文件。"""
+#     )
+#     messages = state["messages"]
+#     result = excel_agent.invoke({"messages": messages})
+#     return {
+#         "messages": result["messages"],
+#         "current_turn": state.get("current_turn", 0)
+#     }
+
+def call_xmind_agent_node(state: State):
+    """调用工具生成xmind文件"""
+    xmind_agent = create_agent(
         model=model,
         tools=tools,
-        system_prompt="""根据用例信息，生成Excel文件。"""
-    )
+        system_prompt="""🎯 核心任务 (Core Task)
+你是一个专业的测试用例管理助手。你的任务是：
+1. 从对话历史中提取所有生成的测试用例
+2. 将测试用例整理成结构化的JSON格式
+3. 调用 generate_xmind_from_test_cases 工具生成XMind思维导图文件
+
+📋 工具调用说明
+你需要调用 generate_xmind_from_test_cases 工具，该工具接受以下参数：
+
+**必需参数：**
+- test_cases: List[Dict] - 测试用例列表，每个测试用例必须包含以下字段：
+  * "用例ID": 测试用例的唯一标识（如：TC-LOGIN-001）
+  * "测试模块": 测试所属的模块（如：用户登录、购物车）
+  * "用例标题": 测试用例的标题
+  * "优先级": 测试用例的优先级（如：P0、P1、P2）
+  * "用例类型": 测试维度（如：正向功能、异常场景、边界值）
+  * "前置条件": 执行测试前的准备工作
+  * "操作步骤": 测试的具体步骤
+  * "预期结果": 期望的测试结果
+
+**可选参数：**
+- requirement_name: str - 需求名称，默认为"测试用例"
+- file_path: str - 文件保存路径，默认为None（自动生成）
+- auto_open: bool - 是否自动打开文件，默认为False
+
+📝 测试用例格式示例
+```json
+[
+    {
+        "用例ID": "TC-LOGIN-001",
+        "测试模块": "用户登录",
+        "用例标题": "验证正确的用户名和密码登录",
+        "优先级": "P0",
+        "用例类型": "正向功能",
+        "前置条件": "用户已注册且账号状态正常",
+        "操作步骤": "1. 打开登录页面\n2. 输入正确的用户名\n3. 输入正确的密码\n4. 点击登录按钮",
+        "预期结果": "成功登录并跳转到首页，显示用户信息"
+    },
+    {
+        "用例ID": "TC-LOGIN-002",
+        "测试模块": "用户登录",
+        "用例标题": "验证错误密码登录失败",
+        "优先级": "P0",
+        "用例类型": "异常场景",
+        "前置条件": "用户已注册",
+        "操作步骤": "1. 打开登录页面\n2. 输入正确的用户名\n3. 输入错误的密码\n4. 点击登录按钮",
+        "预期结果": "登录失败，提示密码错误"
+    }
+]
+```
+
+🎯 你的工作流程
+1. **提取测试用例**：从对话历史中找到所有生成的测试用例
+2. **结构化数据**：将测试用例整理成上述JSON格式
+3. **提取需求名称**：从用户的原始需求中提取需求名称
+4. **调用工具**：使用整理好的数据调用 generate_xmind_from_test_cases 工具
+
+⚠️ 重要提示
+- 确保每个测试用例都包含所有必需字段
+- 用例ID必须唯一
+- 操作步骤使用 \n 分隔多个步骤
+- 不要遗漏任何测试用例
+- 如果对话中有多个模块的用例，都要包含在test_cases列表中
+
+🚀 开始执行
+现在请从对话历史中提取测试用例，并调用工具生成XMind文件。
+
+""")
     messages = state["messages"]
-    result = excel_agent.invoke({"messages": messages})
+    result = xmind_agent.invoke({"messages": messages})
     return {
         "messages": result["messages"],
         "current_turn": state.get("current_turn", 0)
@@ -133,11 +214,13 @@ def condition_edge(state: State):
     if last_message and hasattr(last_message, 'content'):
         content = str(last_message.content).lower()
         if "用例通过" in content:
-            return "call_tool_excel_agent_node"
+            return "call_xmind_agent_node"
+            # return "call_tool_excel_agent_node"
     
     # 如果达到最大轮次，也调用工具
     if current_turn >= 3:
-        return "call_tool_excel_agent_node"
+        return "call_xmind_agent_node"
+        # return "call_tool_excel_agent_node"
     else:
         return "call_llm_test_case_generation_node"
 
@@ -149,7 +232,8 @@ agent_builder = StateGraph(State)
 # 添加节点
 agent_builder.add_node("call_llm_test_case_generation_node", call_llm_test_case_generation_node)
 agent_builder.add_node("call_llm_test_case_review_node", call_llm_test_case_review_node)
-agent_builder.add_node("call_tool_excel_agent_node", call_tool_excel_agent_node)
+agent_builder.add_node("call_xmind_agent_node", call_xmind_agent_node)
+# agent_builder.add_node("call_tool_excel_agent_node", call_tool_excel_agent_node)
 agent_builder.add_node("condition_edge", condition_edge)
 agent_builder.add_node("tool_node", tool_node)
 
@@ -160,11 +244,14 @@ agent_builder.add_conditional_edges(
     "call_llm_test_case_review_node",  # 源节点
     condition_edge,                    # 条件判断函数
     {
-        "call_tool_excel_agent_node": "call_tool_excel_agent_node",  # 使用工具生成excel
+        "call_xmind_agent_node": "call_xmind_agent_node", # 使用工具生成xmind
         "call_llm_test_case_generation_node": "call_llm_test_case_generation_node" # 评审不通过,继续优化用例
     }
 )
-agent_builder.add_edge("call_tool_excel_agent_node", END)
+
+# "call_tool_excel_agent_node": "call_tool_excel_agent_node",  # 使用工具生成excel
+# agent_builder.add_edge("call_tool_excel_agent_node", END)
+agent_builder.add_edge("call_xmind_agent_node", END)
 # 编译graph
 graph = agent_builder.compile()
 

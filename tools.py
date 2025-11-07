@@ -1,13 +1,16 @@
 import asyncio
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
+from datetime import datetime
 
 from langchain_core.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 import dotenv
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+import xmind
+from xmind.core.topic import TopicElement
 
 zhipu_api_key = dotenv.get_key(".env", "ZHIPU_API_KEY")
 
@@ -109,6 +112,23 @@ def get_filesystem_tools():
                 "transport": "stdio"
                 }
             }
+    )
+    tools = asyncio.run(client.get_tools())
+    return tools
+
+def get_xmind_tools():
+    client = MultiServerMCPClient(
+        {
+            "mcp_xmind": {
+                "command": "npx",
+                "args": ["xmind-generator-mcp"],
+                "transport": "stdio",
+                "env": {
+                    "outputPath": "/Users/darkringsystem/AI/LimbusCompany/files/TestCases",
+                    "autoOpenFile": "false"
+                }
+            }
+        }
     )
     tools = asyncio.run(client.get_tools())
     return tools
@@ -335,96 +355,371 @@ def save_test_cases_to_excel(
     except Exception as e:
         return f"未预期的错误: {str(e)}"
 
-# @tool
-# def convert_document(
-#     file_path: Optional[str] = None,
-#     file_bytes: Optional[bytes] = None,
-#     filename: Optional[str] = None,
-# ) -> Dict[str, Any]:
-#     """
-#     将文档转换为 Markdown 格式
-#
-#     支持的文件格式:
-#     - PDF (.pdf)
-#     - Word (.docx, .doc)
-#     - Excel (.xlsx, .xls)
-#     - PowerPoint (.pptx, .ppt)
-#     - 图片 (.png, .jpg, .jpeg, .gif, .bmp, .tiff)
-#     - HTML (.html, .htm)
-#     - EPUB (.epub)
-#
-#     参数:
-#         file_path: 本地文件路径 (可选)
-#         file_bytes: 文件字节流 (可选，用于上传的文件)
-#         filename: 文件名 (当使用 file_bytes 时需要提供)
-#
-#     返回:
-#         包含以下字段的字典:
-#         - success: 是否转换成功
-#         - markdown: 转换后的 Markdown 内容
-#         - images: 提取的图片列表 (base64 编码)
-#         - metadata: 文件元数据
-#         - error: 错误信息 (如果失败)
-#
-#     示例:
-#         # 从本地文件转换
-#         result = convert_document(file_path="/path/to/document.pdf")
-#
-#         # 从上传的文件字节转换
-#         result = convert_document(
-#             file_bytes=file_content,
-#             filename="document.pdf"
-#         )
-#     """
-#     try:
-#         service = MarkdownConverterService()
-#
-#         if file_path:
-#             # 从本地文件转换
-#             result = asyncio.run(service.convert_file(file_path))
-#         elif file_bytes and filename:
-#             # 从字节流转换
-#             result = asyncio.run(service.convert_file_bytes(file_bytes, filename))
-#         else:
-#             return {
-#                 "success": False,
-#                 "error": "必须提供 file_path 或 (file_bytes + filename)"
-#             }
-#
-#         if result.get("success"):
-#             # 格式化响应
-#             response = {
-#                 "success": True,
-#                 "markdown": result.get("markdown", ""),
-#                 "metadata": {
-#                     "filename": result.get("filename", filename or "unknown"),
-#                     "file_size": result.get("file_size", 0),
-#                     "pages": result.get("pages", 0),
-#                     "conversion_time": result.get("conversion_time", 0),
-#                 }
-#             }
-#
-#             # 处理提取的图片
-#             if result.get("images"):
-#                 response["images"] = [
-#                     {
-#                         "data": base64.b64encode(img.get("data", b"")).decode("utf-8"),
-#                         "format": img.get("format", "png"),
-#                         "page": img.get("page", 0),
-#                     }
-#                     for img in result.get("images", [])
-#                 ]
-#
-#             return response
-#         else:
-#             return {
-#                 "success": False,
-#                 "error": result.get("error", "转换失败")
-#             }
-#
-#     except Exception as e:
-#         return {
-#             "success": False,
-#             "error": f"文档转换错误: {str(e)}"
-#         }
+
+def _fix_xmind_compatibility(xmind_path: Path) -> None:
+    """
+    修复XMind文件兼容性问题。
+
+    xmind-sdk生成的文件缺少META-INF/manifest.xml，导致XMind 2020+无法打开。
+    此函数将manifest.xml添加到xmind文件中。
+
+    参数:
+        xmind_path: XMind文件路径
+    """
+    import zipfile
+    import tempfile
+    import shutil
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # manifest.xml内容
+    manifest_content = '''<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<manifest xmlns="urn:xmind:xmap:xmlns:manifest:1.0" password-hint="">
+    <file-entry full-path="content.xml" media-type="text/xml"/>
+    <file-entry full-path="META-INF/" media-type=""/>
+    <file-entry full-path="META-INF/manifest.xml" media-type="text/xml"/>
+</manifest>'''
+
+    try:
+        logger.debug(f"开始修复XMind兼容性: {xmind_path}")
+
+        # 创建临时目录
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            logger.debug(f"临时目录: {temp_path}")
+
+            # 解压xmind文件（xmind文件本质是zip）
+            logger.debug("解压XMind文件...")
+            with zipfile.ZipFile(xmind_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_path)
+            logger.debug("✓ 解压完成")
+
+            # 创建META-INF目录
+            meta_inf_dir = temp_path / "META-INF"
+            meta_inf_dir.mkdir(exist_ok=True)
+            logger.debug(f"✓ 创建META-INF目录: {meta_inf_dir}")
+
+            # 写入manifest.xml
+            manifest_file = meta_inf_dir / "manifest.xml"
+            manifest_file.write_text(manifest_content, encoding='utf-8')
+            logger.debug(f"✓ 写入manifest.xml: {manifest_file}")
+
+            # 重新打包为xmind文件
+            logger.debug("重新打包XMind文件...")
+            file_count = 0
+            with zipfile.ZipFile(xmind_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                for file in temp_path.rglob('*'):
+                    if file.is_file():
+                        arcname = file.relative_to(temp_path)
+                        zip_ref.write(file, arcname)
+                        file_count += 1
+            logger.debug(f"✓ 重新打包完成，共 {file_count} 个文件")
+
+        logger.info(f"✓ XMind兼容性修复成功: {xmind_path}")
+
+    except Exception as e:
+        # 修复失败不影响主流程，只记录错误
+        logger.error(f"❌ XMind兼容性修复失败: {e}", exc_info=True)
+        print(f"警告：XMind兼容性修复失败: {e}")
+
+
+@tool
+def generate_xmind_from_test_cases(
+    test_cases: List[Dict[str, Any]],
+    requirement_name: str = "测试用例",
+    file_path: Optional[str] = None,
+    auto_open: bool = False
+) -> str:
+    """
+    根据测试用例生成XMind思维导图文件。
+
+    此函数将测试用例按照层级结构组织成XMind思维导图，便于可视化查看和管理测试用例。
+
+    参数:
+        test_cases: 测试用例列表，每个测试用例是一个字典。
+                   必需字段:
+                   - "用例ID": 测试用例的唯一标识
+                   - "测试模块": 测试所属的模块（如：用户登录、购物车等）
+                   - "用例标题": 测试用例的标题
+                   可选字段:
+                   - "前置条件": 执行测试前的准备工作
+                   - "操作步骤": 测试的具体步骤
+                   - "预期结果": 期望的测试结果
+                   - "优先级": 测试用例的优先级（如：P0、P1、P2）
+                   - "用例类型": 测试维度（如：正向功能、异常场景、边界值等）
+
+                   示例:
+                   [
+                       {
+                           "用例ID": "TC-FUNC-001",
+                           "测试模块": "用户登录",
+                           "用例标题": "验证正确的用户名和密码登录",
+                           "前置条件": "用户已注册",
+                           "操作步骤": "1. 打开登录页面\n2. 输入正确的用户名和密码\n3. 点击登录按钮",
+                           "预期结果": "成功登录并跳转到首页",
+                           "优先级": "P0",
+                           "用例类型": "正向功能"
+                       }
+                   ]
+
+        requirement_name: 需求名称，将作为思维导图的中心主题。默认为"测试用例"
+
+        file_path: XMind文件保存路径。
+                  - 如果为None，则保存到默认路径: files/TestCases/[需求名称]_测试用例_[时间戳].xmind
+                  - 可以传入相对路径或绝对路径
+                  - 如果只传入文件名，则保存到默认目录下
+
+        auto_open: 是否在生成后自动打开XMind文件。默认为False
+
+    返回:
+        str: 成功消息（包含文件路径）或错误消息
+
+    XMind层级结构:
+        L0 (中心主题): [需求名称] 测试用例
+        L1 (一级分支): [测试模块] (例如：用户登录、购物车)
+        L2 (二级分支): [测试维度/用例类型] (例如：正向功能、异常场景、边界值)
+        L3 (三级分支): [优先级] [用例标题] (例如：[P0] 验证正确的用户名和密码登录)
+        L4 (子主题):
+            - 前置条件: [前置条件内容]
+            - 操作步骤: [操作步骤内容]
+            - 预期结果: [预期结果内容]
+
+    使用示例:
+        >>> test_data = [
+        ...     {
+        ...         "用例ID": "TC-001",
+        ...         "测试模块": "用户登录",
+        ...         "用例标题": "正确登录",
+        ...         "优先级": "P0",
+        ...         "用例类型": "正向功能",
+        ...         "前置条件": "用户已注册",
+        ...         "操作步骤": "1. 输入用户名\\n2. 输入密码\\n3. 点击登录",
+        ...         "预期结果": "登录成功"
+        ...     }
+        ... ]
+        >>> result = generate_xmind_from_test_cases(test_data, "登录功能")
+        >>> print(result)
+        成功生成XMind文件！已保存 1 条测试用例到: /path/to/登录功能_测试用例_20250110_143022.xmind
+    """
+    import logging
+
+    # 配置日志
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    # 如果没有处理器，添加一个控制台处理器
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    try:
+        logger.info("=" * 60)
+        logger.info("开始生成XMind文件")
+        logger.info(f"需求名称: {requirement_name}")
+        logger.info(f"测试用例数量: {len(test_cases) if isinstance(test_cases, list) else 'N/A'}")
+        logger.info(f"文件路径: {file_path}")
+        logger.info(f"自动打开: {auto_open}")
+        logger.info("=" * 60)
+
+        # 验证输入数据
+        logger.debug("步骤1: 验证输入数据")
+        if not test_cases:
+            logger.error("测试用例列表为空")
+            return "错误：测试用例列表为空"
+
+        if not isinstance(test_cases, list):
+            logger.error(f"test_cases类型错误: {type(test_cases)}")
+            return "错误：test_cases 必须是字典列表"
+
+        logger.info(f"✓ 输入验证通过，共 {len(test_cases)} 条测试用例")
+
+        # 处理文件路径
+        logger.debug("步骤2: 处理文件路径")
+        if file_path is None:
+            # 使用默认路径，包含时间戳
+            project_root = Path(__file__).parent
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{requirement_name}_测试用例_{timestamp}.xmind"
+            file_path = project_root / "files" / "TestCases" / filename
+            logger.info(f"使用默认路径: {file_path}")
+        else:
+            file_path = Path(file_path)
+            # 如果是相对路径且只是文件名，放到默认目录下
+            if not file_path.is_absolute() and len(file_path.parts) == 1:
+                project_root = Path(__file__).parent
+                file_path = project_root / "files" / "TestCases" / file_path
+                logger.info(f"相对路径转换为: {file_path}")
+            # 如果是其他相对路径，基于项目根目录解析
+            elif not file_path.is_absolute():
+                project_root = Path(__file__).parent
+                file_path = project_root / file_path
+                logger.info(f"相对路径解析为: {file_path}")
+            else:
+                logger.info(f"使用绝对路径: {file_path}")
+
+        # 确保目录存在
+        logger.debug("步骤3: 创建目录")
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"✓ 目录已创建: {file_path.parent}")
+
+        # 创建XMind工作簿
+        logger.debug("步骤4: 创建XMind工作簿")
+        workbook = xmind.load(str(file_path))
+        primary_sheet = workbook.getPrimarySheet()
+        primary_sheet.setTitle("测试用例")
+        logger.info("✓ XMind工作簿已创建")
+
+        # 设置中心主题
+        logger.debug("步骤5: 设置中心主题")
+        root_topic = primary_sheet.getRootTopic()
+        root_topic.setTitle(f"{requirement_name} 测试用例")
+        logger.info(f"✓ 中心主题已设置: {requirement_name} 测试用例")
+
+        # 按测试模块分组
+        logger.debug("步骤6: 按测试模块分组")
+        modules = {}
+        for idx, case in enumerate(test_cases):
+            if not isinstance(case, dict):
+                logger.error(f"测试用例 #{idx} 类型错误: {type(case)}")
+                return f"错误：每个测试用例必须是字典类型，当前发现 {type(case)}"
+
+            module = case.get("测试模块", "未分类模块")
+            if module not in modules:
+                modules[module] = {}
+
+            # 按用例类型（测试维度）分组
+            case_type = case.get("用例类型", "功能测试")
+            if case_type not in modules[module]:
+                modules[module][case_type] = []
+
+            modules[module][case_type].append(case)
+
+        logger.info(f"✓ 测试用例已分组: {len(modules)} 个模块")
+        for module_name, types in modules.items():
+            total_cases = sum(len(cases) for cases in types.values())
+            logger.debug(f"  - {module_name}: {len(types)} 个类型, {total_cases} 条用例")
+
+        # 构建思维导图结构
+        logger.debug("步骤7: 构建思维导图结构")
+        for module_idx, (module_name, types) in enumerate(modules.items()):
+            # L1: 测试模块
+            logger.debug(f"  处理模块 {module_idx + 1}/{len(modules)}: {module_name}")
+            module_topic = root_topic.addSubTopic()
+            module_topic.setTitle(module_name)
+
+            for type_idx, (type_name, cases) in enumerate(types.items()):
+                # L2: 测试维度/用例类型
+                logger.debug(f"    处理类型 {type_idx + 1}/{len(types)}: {type_name} ({len(cases)} 条用例)")
+                type_topic = module_topic.addSubTopic()
+                type_topic.setTitle(type_name)
+
+                for case_idx, case in enumerate(cases):
+                    # L3: 用例标题（带优先级）
+                    priority = case.get("优先级", "")
+                    title = case.get("用例标题", "未命名用例")
+                    case_title = f"[{priority}] {title}" if priority else title
+
+                    case_topic = type_topic.addSubTopic()
+                    case_topic.setTitle(case_title)
+
+                    # 注意：xmind-sdk 不支持 addLabel 方法
+                    # 用例ID已经包含在标题中，无需额外添加标签
+
+                    # L4: 添加详细信息作为子主题
+                    # 前置条件
+                    precondition = case.get("前置条件", "")
+                    if precondition:
+                        precondition_topic = case_topic.addSubTopic()
+                        precondition_topic.setTitle(f"前置条件: {precondition}")
+
+                    # 操作步骤
+                    steps = case.get("操作步骤", "")
+                    if steps:
+                        steps_topic = case_topic.addSubTopic()
+                        steps_topic.setTitle(f"操作步骤: {steps}")
+
+                    # 预期结果
+                    expected = case.get("预期结果", "")
+                    if expected:
+                        expected_topic = case_topic.addSubTopic()
+                        expected_topic.setTitle(f"预期结果: {expected}")
+
+                    # 将用例ID作为子主题添加（如果存在）
+                    case_id = case.get("用例ID", "")
+                    if case_id:
+                        id_topic = case_topic.addSubTopic()
+                        id_topic.setTitle(f"用例ID: {case_id}")
+
+                    # 将其他字段作为子主题添加
+                    for key, value in case.items():
+                        if key not in ["用例ID", "测试模块", "用例标题", "前置条件",
+                                      "操作步骤", "预期结果", "优先级", "用例类型"]:
+                            if value:  # 只添加非空值
+                                other_topic = case_topic.addSubTopic()
+                                other_topic.setTitle(f"{key}: {value}")
+
+        logger.info("✓ 思维导图结构构建完成")
+
+        # 保存XMind文件
+        logger.debug("步骤8: 保存XMind文件")
+        try:
+            logger.info(f"正在保存文件到: {file_path}")
+            xmind.save(workbook, str(file_path))
+            logger.info("✓ XMind文件已保存")
+
+            # 修复XMind 2020+兼容性问题：添加manifest.xml
+            logger.debug("步骤9: 修复XMind 2020+兼容性")
+            _fix_xmind_compatibility(file_path)
+            logger.info("✓ XMind兼容性修复完成")
+
+        except PermissionError as e:
+            logger.error(f"权限错误: {e}")
+            return f"错误：权限被拒绝。文件 '{file_path}' 可能正在其他程序中打开。"
+        except Exception as e:
+            logger.error(f"保存文件失败: {e}", exc_info=True)
+            return f"错误：保存文件失败: {str(e)}"
+
+        # 自动打开文件（如果需要）
+        if auto_open:
+            logger.debug("步骤10: 自动打开文件")
+            try:
+                import subprocess
+                import platform
+
+                system = platform.system()
+                if system == "Darwin":  # macOS
+                    subprocess.run(["open", str(file_path)])
+                    logger.info("✓ 文件已自动打开 (macOS)")
+                elif system == "Windows":
+                    subprocess.run(["start", str(file_path)], shell=True)
+                    logger.info("✓ 文件已自动打开 (Windows)")
+                elif system == "Linux":
+                    subprocess.run(["xdg-open", str(file_path)])
+                    logger.info("✓ 文件已自动打开 (Linux)")
+            except Exception as e:
+                # 打开失败不影响主流程
+                logger.warning(f"自动打开文件失败: {e}")
+
+        # 生成成功消息
+        abs_path = file_path.resolve()
+        success_msg = f"成功生成XMind文件！已保存 {len(test_cases)} 条测试用例到: {abs_path}"
+        logger.info("=" * 60)
+        logger.info("✅ XMind文件生成成功！")
+        logger.info(f"文件路径: {abs_path}")
+        logger.info(f"测试用例数: {len(test_cases)}")
+        logger.info("=" * 60)
+        return success_msg
+
+    except Exception as e:
+        logger.error("=" * 60)
+        logger.error("❌ XMind文件生成失败！")
+        logger.error(f"错误类型: {type(e).__name__}")
+        logger.error(f"错误信息: {str(e)}")
+        logger.error("=" * 60)
+        logger.exception("详细错误堆栈:")
+        return f"未预期的错误: {str(e)}"
 

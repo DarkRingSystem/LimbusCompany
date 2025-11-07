@@ -15,3 +15,7 @@ def get_doubao_seed1_6_model():
     return ChatOpenAI(model="doubao-seed-1-6-251015",
                 base_url= "https://ark.cn-beijing.volces.com/api/v3",
                api_key=dotenv.get_key(".env", "DOUBAO_API_KEY"))
+
+def get_qwen_vl_model():
+    return ChatOpenAI(model="qwen-vl-max-latest",base_url= "https://dashscope.aliyuncs.com/compatible-mode/v1",
+               api_key=dotenv.get_key(".env", "VISION_API_KEY"))
