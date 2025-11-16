@@ -1,0 +1,13 @@
+{
+  "id": "56699105-20c4-4d79-b4c6-dc654f847f39",
+  "knowledge_base_id": "276636ad-794a-4600-b4a0-13d01480fa0e",
+  "name": "pdf测试.pdf",
+  "file_type": "pdf",
+  "file_size": 164800,
+  "character_count": 0,
+  "chunk_count": 0,
+  "recall_count": 0,
+  "status": "failed",
+  "created_at": "2025-11-16T10:54:52.926934",
+  "updated_at": "2025-11-16T10:54:52.939473"
+}
