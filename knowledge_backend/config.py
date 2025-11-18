@@ -26,12 +26,12 @@ class Settings(BaseSettings):
 
     # Embedding Model Configuration
     embedding_model_provider: str = "qwen"
-    embedding_model_name: str = "text-embedding-3-small"
+    embedding_model_name: str = "qwen3-embedding:0.6b"
     embedding_model_dimension: int = 1024
 
     # OpenAI Configuration
     openai_api_key: str = ""
-    openai_api_base: str = "https://api.openai.com/v1"
+    openai_api_base: str = "http://127.0.0.1:11434"
 
     # Rerank Model Configuration (Reserved for future use)
     rerank_model_provider: Optional[str] = None

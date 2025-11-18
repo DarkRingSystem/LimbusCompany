@@ -1,6 +1,11 @@
+langchain-text-splitters
+langchain-classic
+langchain-milvus
+pymilvus
 langchain-community
 langchain-pymupdf4llm
 langchain-openai
+langchain-ollama
 openpyxl
 langchain-tavily
 ipython

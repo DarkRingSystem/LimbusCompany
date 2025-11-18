@@ -1,8 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "agent": {
-      "path": "./main.py:agent"
+    "rag_agent": {
+      "path": "./knowledge_backend/rag_agent.py:rag_agent"
     },
     "api_SQL_agent": {
       "path": "./main.py:api_SQL_agent"
