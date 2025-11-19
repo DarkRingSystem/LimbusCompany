@@ -38,7 +38,7 @@ retriever_tool_2 = create_retriever_tool(
     "检索与华为云HSM的API规范",
 )
 model = ChatDeepSeek(
-            api_key="sk-7440f86596d341f7b02c1f9ab6aee136",
+            api_key="...",
             model="deepseek-chat",
         )
 rag_agent = create_agent(
